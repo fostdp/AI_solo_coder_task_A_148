@@ -1,0 +1,31 @@
+{
+  "tolerance": {
+    "dimensional_tolerance_meters": 0.00005,
+    "surface_roughness_ra_meters": 0.0000016,
+    "angular_tolerance_radians": 0.0008727,
+    "min_curvature_radius_meters": 0.003,
+    "manufacturing_cost_base_cny": 1000.0,
+    "feasibility_threshold": 0.5,
+    "jerk_limit_m_per_s3": 1000.0,
+    "weights": {
+      "curvature": 0.35,
+      "lift_tolerance": 0.25,
+      "pressure_angle": 0.2,
+      "jerk": 0.1,
+      "surface": 0.1
+    }
+  },
+  "search_grid": {
+    "radius_steps": 10,
+    "lift_steps": 10,
+    "profile_types": ["cycloidal", "harmonic", "trapezoidal", "polynomial"]
+  },
+  "scoring_weights": {
+    "efficiency_pure": 0.3,
+    "efficiency_with_constraints": 0.7
+  },
+  "pressure_angle_penalty": {
+    "threshold_degrees": 30.0,
+    "decay_exponent": 2
+  }
+}

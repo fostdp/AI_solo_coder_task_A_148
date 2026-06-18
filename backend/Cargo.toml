@@ -5,8 +5,8 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
-rumqttc = { version = "0.24", features = ["async"] }
-clickhouse = { version = "0.12", features = ["tokio"] }
+rumqttc = { version = "0.24" }
+clickhouse = "0.12"
 warp = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

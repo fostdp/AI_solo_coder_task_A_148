@@ -1,0 +1,28 @@
+{
+  "gravity": 9.81,
+  "restitution_default": 0.35,
+  "friction_default": 0.25,
+  "hertz_stiffness_base": 5000000.0,
+  "damping_ratio": 0.3,
+  "max_penetration_meters": 0.005,
+  "penalty_exponent": 1.5,
+  "contact": {
+    "grain_young_modulus_pa": 1500000000.0,
+    "grain_poisson_ratio": 0.3,
+    "cam_young_modulus_pa": 200000000000.0,
+    "cam_poisson_ratio": 0.3,
+    "duitou_contact_radius_meters": 0.15
+  },
+  "grain_breakage": {
+    "base_breakage_rate": 0.05,
+    "energy_weight": 0.25,
+    "force_weight": 0.15,
+    "energy_reference_joules": 2.0,
+    "force_reference_newtons": 1000.0
+  },
+  "husking_optimal_energy": {
+    "rice_joules": 0.5,
+    "millet_joules": 0.3,
+    "wheat_joules": 0.7
+  }
+}

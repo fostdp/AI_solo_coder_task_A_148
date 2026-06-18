@@ -72,20 +72,57 @@ pub struct OptimizationConstraints {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationResult {
-    pub id: String,
+    pub optimization_id: String,
     pub device_id: String,
-    pub timestamp: DateTime<Utc>,
-    pub cam_base_radius: f64,
-    pub cam_lift: f64,
-    pub cam_pressure_angle: f64,
+    pub grain_type: String,
     pub cam_profile_type: String,
-    pub target_efficiency: f64,
-    pub actual_efficiency: f64,
-    pub average_pounding_force: f64,
-    pub impact_energy_per_cycle: f64,
+    pub base_radius: f64,
+    pub lift: f64,
+    pub overall_efficiency: f64,
     pub husking_rate: f64,
-    pub grain_breakage_rate: f64,
-    pub cam_profile_points: Vec<CamPoint>,
+    pub breakage_rate: f64,
+    pub pounding_force: f64,
+    pub impact_energy: f64,
+    pub manufacturing_cost: f64,
+    pub cam_profile: Vec<CamPoint>,
+    pub tolerance_report: Option<ToleranceReport>,
+    pub optimization_score: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToleranceReport {
+    pub min_curvature: f64,
+    pub lift_deviation: f64,
+    pub pressure_angle_variation: f64,
+    pub surface_sensitivity: f64,
+    pub jerk: f64,
+    pub overall_feasibility: f64,
+    pub manufacturing_cost: f64,
+    pub curvature_ok: bool,
+    pub lift_ok: bool,
+    pub pressure_angle_ok: bool,
+    pub jerk_ok: bool,
+    pub surface_ok: bool,
+}
+
+impl Default for ToleranceReport {
+    fn default() -> Self {
+        ToleranceReport {
+            min_curvature: 0.0,
+            lift_deviation: 0.0,
+            pressure_angle_variation: 0.0,
+            surface_sensitivity: 0.0,
+            jerk: 0.0,
+            overall_feasibility: 0.0,
+            manufacturing_cost: 1000.0,
+            curvature_ok: false,
+            lift_ok: false,
+            pressure_angle_ok: false,
+            jerk_ok: false,
+            surface_ok: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

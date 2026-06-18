@@ -1,0 +1,218 @@
+﻿cargo : warning: unused import: `futures_util::TryFutureExt`
+所在位置 行:1 字符: 1
++ cargo test 2>&1 | Out-File -FilePath all_tests.log -Encoding utf8 ; G ...
++ ~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: unused...::TryFutureExt` 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ --> src\clickhouse_client.rs:5:5
+  |
+5 | use futures_util::TryFutureExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `pressure_angle`
+   --> src\optimization.rs:366:13
+    |
+366 |         let pressure_angle = self.calculate_pressure_angle(best_params.0,
+ best_params.1)
+    |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with a
+n underscore: `_pressure_angle`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by defau
+lt
+
+warning: unused variable: `tolerance`
+   --> src\optimization.rs:632:13
+    |
+632 |         let tolerance = ToleranceAnalysis::default();
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an und
+erscore: `_tolerance`
+
+warning: unused variable: `key`
+  --> src\alarm_ws.rs:72:29
+   |
+72 |                         let key = format!("{}:{}", alert.alert_type, alert
+.alert_level);
+   |                             ^^^ help: if this is intentional, prefix it wi
+th an underscore: `_key`
+
+warning: enum `BusMessage` is never used
+ --> src\message_bus.rs:8:10
+  |
+8 | pub enum BusMessage {
+  |          ^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `UpdateDevices` is never constructed
+  --> src\message_bus.rs:30:5
+   |
+17 | pub enum SimulatorCommand {
+   |          ---------------- variant in this enum
+...
+30 |     UpdateDevices(Vec<(String, DeviceInfo)>),
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `SimulatorCommand` has a derived impl for the trait `Debug`, but thi
+s is intentionally ignored during dead code analysis
+
+warning: type alias `SensorRx` is never used
+  --> src\message_bus.rs:52:10
+   |
+52 | pub type SensorRx = tokio::sync::mpsc::UnboundedReceiver<SensorData>;
+   |          ^^^^^^^^
+
+warning: type alias `DynamicsRx` is never used
+  --> src\message_bus.rs:55:10
+   |
+55 | pub type DynamicsRx = tokio::sync::mpsc::UnboundedReceiver<DynamicsResult>
+;
+   |          ^^^^^^^^^^
+
+warning: type alias `AlertTx` is never used
+  --> src\message_bus.rs:57:10
+   |
+57 | pub type AlertTx = tokio::sync::broadcast::Sender<Alert>;
+   |          ^^^^^^^
+
+warning: type alias `AlertRx` is never used
+  --> src\message_bus.rs:58:10
+   |
+58 | pub type AlertRx = tokio::sync::broadcast::Receiver<Alert>;
+   |          ^^^^^^^
+
+warning: field `contact_radius` is never read
+  --> src\dynamics.rs:10:5
+   |
+ 5 | pub struct PenaltyContactModel {
+   |            ------------------- field in this struct
+...
+10 |     contact_radius: f64,
+   |     ^^^^^^^^^^^^^^
+
+warning: methods `calculate_contact_area`, `calculate_contact_stress`, and `get
+_penetration` are never used
+   --> src\dynamics.rs:94:12
+    |
+ 16 | impl PenaltyContactModel {
+    | ------------------------ methods in this implementation
+...
+ 94 |     pub fn calculate_contact_area(&self, penetration: f64) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+ 99 |     pub fn calculate_contact_stress(&self, force: f64, area: f64) -> f64 
+{
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+105 |     pub fn get_penetration(&self) -> f64 { self.penetration }
+    |            ^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src\dynamics.rs:123:12
+    |
+122 | impl CamDynamicsSimulator {
+    | ------------------------- associated function in this implementation
+123 |     pub fn new(device: DeviceInfo) -> Self {
+    |            ^^^
+
+warning: associated function `new` is never used
+  --> src\optimization.rs:40:12
+   |
+28 | impl ToleranceAnalysis {
+   | ---------------------- associated function in this implementation
+...
+40 |     pub fn new(
+   |            ^^^
+
+warning: associated function `with_tolerance` is never used
+   --> src\optimization.rs:293:12
+    |
+284 | impl PoundingOptimizer {
+    | ---------------------- associated function in this implementation
+...
+293 |     pub fn with_tolerance(device: DeviceInfo, tolerance: ToleranceAnalysi
+s) -> Self {
+    |            ^^^^^^^^^^^^^^
+
+warning: function `calculate_efficiency_score` is never used
+   --> src\optimization.rs:582:8
+    |
+582 | pub fn calculate_efficiency_score(husking_rate: f64, breakage_rate: f64) 
+-> f64 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `ConnectionError` is never constructed
+  --> src\clickhouse_client.rs:10:5
+   |
+ 8 | pub enum ClickHouseError {
+   |          --------------- variant in this enum
+ 9 |     #[error("ClickHouse connection error: {0}")]
+10 |     ConnectionError(String),
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: `ClickHouseError` has a derived impl for the trait `Debug`, but this
+ is intentionally ignored during dead code analysis
+
+warning: variant `Info` is never constructed
+ --> src\alerts.rs:7:5
+  |
+6 | pub enum AlertLevel {
+  |          ---------- variant in this enum
+7 |     Info,
+  |     ^^^^
+  |
+  = note: `AlertLevel` has derived impls for the traits `Clone` and `Debug`, bu
+t these are intentionally ignored during dead code analysis
+
+warning: function `alert_level_from_str` is never used
+   --> src\alerts.rs:141:8
+    |
+141 | pub fn alert_level_from_str(level: &str) -> AlertLevel {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `subscribe` is never used
+  --> src\alarm_ws.rs:98:12
+   |
+55 | impl AlarmWsService {
+   | ------------------- method in this implementation
+...
+98 |     pub fn subscribe(&self) -> broadcast::Receiver<Alert> {
+   |            ^^^^^^^^^
+
+warning: fields `alert_rx` and `alarm_cmd_tx` are never read
+  --> src\api.rs:31:5
+   |
+29 | pub struct ApiServer {
+   |            --------- fields in this struct
+30 |     clickhouse: Arc<ClickHouseClient>,
+31 |     alert_rx: broadcast::Receiver<Alert>,
+   |     ^^^^^^^^
+...
+35 |     alarm_cmd_tx: AlarmCmdTx,
+   |     ^^^^^^^^^^^^
+
+warning: `shuidui-backend` (bin "shuidui-backend" test) generated 21 warnings (
+run `cargo fix --bin "shuidui-backend" -p shuidui-backend --tests` to apply 3 s
+uggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
+     Running unittests src\main.rs (target\debug\deps\shuidui_backend-b5a327fcc
+e0b3e06.exe)
+
+running 11 tests
+test alerts::tests::test_stall_detection ... ok
+test alerts::tests::test_vibration_alert ... ok
+test dynamics::tests::test_no_penetration_no_force ... ok
+test dynamics::tests::test_penalty_model_high_speed ... ok
+test optimization::tests::test_curvature_calculation ... ok
+test dynamics::tests::test_penalty_model_basic ... ok
+test dynamics::tests::test_simulate_basic ... ok
+test optimization::tests::test_profile_generation ... ok
+test dynamics::tests::test_cam_profile_generation ... ok
+test optimization::tests::test_tolerance_analysis ... ok
+test optimization::tests::test_optimization ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

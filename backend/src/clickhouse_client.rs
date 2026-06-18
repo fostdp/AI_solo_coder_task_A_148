@@ -2,6 +2,7 @@ use crate::models::{SensorData, DynamicsResult, Alert, DeviceInfo, OptimizationR
 use clickhouse::{Client, Row};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use futures_util::TryFutureExt;
 
 #[derive(Debug, Error)]
 pub enum ClickHouseError {
@@ -91,7 +92,7 @@ impl ClickHouseClient {
         })?;
 
         for row in rows {
-            insert.write(&row).map_err(|e| {
+            insert.write(&row).await.map_err(|e| {
                 ClickHouseError::InsertError(e.to_string())
             })?;
         }
@@ -128,7 +129,7 @@ impl ClickHouseClient {
         })?;
 
         for row in rows {
-            insert.write(&row).map_err(|e| {
+            insert.write(&row).await.map_err(|e| {
                 ClickHouseError::InsertError(e.to_string())
             })?;
         }
@@ -157,7 +158,7 @@ impl ClickHouseClient {
             ClickHouseError::InsertError(e.to_string())
         })?;
 
-        insert.write(&row).map_err(|e| {
+        insert.write(&row).await.map_err(|e| {
             ClickHouseError::InsertError(e.to_string())
         })?;
 
@@ -408,23 +409,23 @@ impl ClickHouseClient {
             optimization_parameters: String,
         }
 
-        let params = serde_json::to_string(&result.cam_profile_points)
+        let params = serde_json::to_string(&result.cam_profile)
             .unwrap_or_else(|_| "[]".to_string());
 
         let row = OptRow {
-            id: result.id.clone(),
+            id: result.optimization_id.clone(),
             device_id: result.device_id.clone(),
             timestamp: result.timestamp.timestamp_millis(),
-            cam_base_radius: result.cam_base_radius,
-            cam_lift: result.cam_lift,
-            cam_pressure_angle: result.cam_pressure_angle,
+            cam_base_radius: result.base_radius,
+            cam_lift: result.lift,
+            cam_pressure_angle: 0.0,
             cam_profile_type: result.cam_profile_type.clone(),
-            target_efficiency: result.target_efficiency,
-            actual_efficiency: result.actual_efficiency,
-            average_pounding_force: result.average_pounding_force,
-            impact_energy_per_cycle: result.impact_energy_per_cycle,
+            target_efficiency: 0.0,
+            actual_efficiency: result.overall_efficiency,
+            average_pounding_force: result.pounding_force,
+            impact_energy_per_cycle: result.impact_energy,
             husking_rate: result.husking_rate,
-            grain_breakage_rate: result.grain_breakage_rate,
+            grain_breakage_rate: result.breakage_rate,
             optimization_parameters: params,
         };
 
@@ -435,6 +436,7 @@ impl ClickHouseClient {
 
         insert
             .write(&row)
+            .await
             .map_err(|e| ClickHouseError::InsertError(e.to_string()))?;
 
         insert

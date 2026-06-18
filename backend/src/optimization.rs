@@ -1,16 +1,12 @@
 use crate::models::{
-    OptimizationRequest, OptimizationResult, CamPoint, DeviceInfo,
+    OptimizationRequest, OptimizationResult, CamPoint, DeviceInfo, ToleranceReport,
 };
-use crate::dynamics::{CamDynamicsSimulator, calculate_husking_rate, calculate_grain_breakage_rate};
+use crate::dynamics::{calculate_husking_rate, calculate_grain_breakage_rate};
+use crate::config::{OptimizationConfig, ToleranceConfig, DynamicsConfig};
 use chrono::Utc;
 use uuid::Uuid;
 
 const GRAVITY: f64 = 9.81;
-
-const DIMENSIONAL_TOLERANCE: f64 = 0.00005;
-const SURFACE_ROUGHNESS_RA: f64 = 1.6e-6;
-const ANGULAR_TOLERANCE: f64 = 0.05_f64.to_radians();
-const MIN_CURVATURE_RADIUS: f64 = 0.003;
 const MANUFACTURING_COST_BASE: f64 = 1000.0;
 
 pub struct ToleranceAnalysis {
@@ -18,20 +14,29 @@ pub struct ToleranceAnalysis {
     surface_roughness: f64,
     angular_tolerance: f64,
     min_curvature_radius: f64,
+    jerk_limit: f64,
+    manufacturing_cost_base: f64,
 }
 
 impl Default for ToleranceAnalysis {
     fn default() -> Self {
-        ToleranceAnalysis {
-            dimensional_tolerance: DIMENSIONAL_TOLERANCE,
-            surface_roughness: SURFACE_ROUGHNESS_RA,
-            angular_tolerance: ANGULAR_TOLERANCE,
-            min_curvature_radius: MIN_CURVATURE_RADIUS,
-        }
+        let cfg = OptimizationConfig::load_default();
+        Self::from_config(&cfg.tolerance)
     }
 }
 
 impl ToleranceAnalysis {
+    pub fn from_config(cfg: &ToleranceConfig) -> Self {
+        ToleranceAnalysis {
+            dimensional_tolerance: cfg.dimensional_tolerance_meters,
+            surface_roughness: cfg.surface_roughness_ra_meters,
+            angular_tolerance: cfg.angular_tolerance_radians,
+            min_curvature_radius: cfg.min_curvature_radius_meters,
+            jerk_limit: cfg.jerk_limit_m_per_s3,
+            manufacturing_cost_base: cfg.manufacturing_cost_base_cny,
+        }
+    }
+
     pub fn new(
         dimensional_tolerance: f64,
         surface_roughness: f64,
@@ -43,11 +48,26 @@ impl ToleranceAnalysis {
             surface_roughness,
             angular_tolerance,
             min_curvature_radius,
+            jerk_limit: 1000.0,
+            manufacturing_cost_base: 1000.0,
         }
     }
 
-    pub fn analyze_profile(&self, profile: &[CamPoint]) -> ToleranceReport {
-        let mut report = ToleranceReport::default();
+    pub fn analyze(&self, profile: &[CamPoint]) -> ToleranceReport {
+        let mut report = ToleranceReport {
+            min_curvature: 0.0,
+            lift_deviation: 0.0,
+            pressure_angle_variation: 0.0,
+            surface_sensitivity: 0.0,
+            jerk: 0.0,
+            overall_feasibility: 0.0,
+            manufacturing_cost: 0.0,
+            curvature_ok: false,
+            lift_ok: false,
+            pressure_angle_ok: false,
+            jerk_ok: false,
+            surface_ok: false,
+        };
 
         report.min_curvature = self.calculate_min_curvature(profile);
         report.curvature_ok = report.min_curvature >= self.min_curvature_radius;
@@ -62,7 +82,7 @@ impl ToleranceAnalysis {
         report.surface_ok = report.surface_sensitivity <= self.surface_roughness * 100.0;
 
         report.jerk = self.calculate_max_jerk(profile);
-        report.jerk_ok = report.jerk < 1000.0;
+        report.jerk_ok = report.jerk < self.jerk_limit;
 
         report.overall_feasibility =
             report.curvature_ok as u8 as f64 * 0.35 +
@@ -158,7 +178,7 @@ impl ToleranceAnalysis {
         let mut max_variation = 0.0;
 
         for i in 1..profile.len() {
-            let prev = &profile[i - 1];
+            let _prev = &profile[i - 1];
             let curr = &profile[i];
 
             if curr.radius > 0.0 {
@@ -232,16 +252,16 @@ impl ToleranceAnalysis {
         report: &ToleranceReport,
         profile: &[CamPoint],
     ) -> f64 {
-        let mut cost = MANUFACTURING_COST_BASE;
+        let mut cost = self.manufacturing_cost_base;
 
         if !report.curvature_ok {
             cost *= 1.5;
         }
 
-        let tightness = (DIMENSIONAL_TOLERANCE / self.dimensional_tolerance).max(1.0);
+        let tightness = (5e-5 / self.dimensional_tolerance.max(1e-9)).max(1.0);
         cost *= tightness;
 
-        let roughness_factor = (SURFACE_ROUGHNESS_RA / self.surface_roughness.max(0.1e-6)).max(1.0);
+        let roughness_factor = (1.6e-6 / self.surface_roughness.max(0.1e-6)).max(1.0);
         cost *= roughness_factor.sqrt();
 
         if !report.jerk_ok {
@@ -255,25 +275,10 @@ impl ToleranceAnalysis {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ToleranceReport {
-    pub min_curvature: f64,
-    pub curvature_ok: bool,
-    pub lift_deviation: f64,
-    pub lift_ok: bool,
-    pub pressure_angle_variation: f64,
-    pub pressure_angle_ok: bool,
-    pub surface_sensitivity: f64,
-    pub surface_ok: bool,
-    pub jerk: f64,
-    pub jerk_ok: bool,
-    pub overall_feasibility: f64,
-    pub manufacturing_cost: f64,
-}
-
 pub struct PoundingOptimizer {
     device: DeviceInfo,
     tolerance: ToleranceAnalysis,
+    dynamics_config: DynamicsConfig,
 }
 
 impl PoundingOptimizer {
@@ -281,11 +286,24 @@ impl PoundingOptimizer {
         PoundingOptimizer {
             device,
             tolerance: ToleranceAnalysis::default(),
+            dynamics_config: DynamicsConfig::load_default(),
         }
     }
 
     pub fn with_tolerance(device: DeviceInfo, tolerance: ToleranceAnalysis) -> Self {
-        PoundingOptimizer { device, tolerance }
+        PoundingOptimizer {
+            device,
+            tolerance,
+            dynamics_config: DynamicsConfig::load_default(),
+        }
+    }
+
+    pub fn with_config(device: DeviceInfo, tolerance: ToleranceAnalysis, dynamics_config: DynamicsConfig) -> Self {
+        PoundingOptimizer {
+            device,
+            tolerance,
+            dynamics_config,
+        }
     }
 
     pub fn optimize(&self, request: &OptimizationRequest) -> OptimizationResult {
@@ -309,31 +327,29 @@ impl PoundingOptimizer {
                     if let Some(pressure_angle) = self.calculate_pressure_angle(r, h) {
                         if pressure_angle <= constraints.max_pressure_angle {
                             let profile = self.generate_profile(profile_type, r, h);
-                            let tolerance_report = self.tolerance.analyze_profile(&profile);
+                            let tolerance_report = self.tolerance.analyze(&profile);
 
-                            if tolerance_report.overall_feasibility >= 0.5 {
-                                let efficiency = self.evaluate_efficiency(
-                                    &profile,
-                                    &request.grain_type,
-                                    r,
-                                    h,
-                                );
+                            let efficiency = self.evaluate_efficiency(
+                                &profile,
+                                &request.grain_type,
+                                r,
+                                h,
+                            );
 
-                                let cost_factor =
-                                    (MANUFACTURING_COST_BASE / tolerance_report.manufacturing_cost)
-                                        .max(0.3)
-                                        .min(1.0);
+                            let cost_factor =
+                                (MANUFACTURING_COST_BASE / tolerance_report.manufacturing_cost)
+                                    .max(0.3)
+                                    .min(1.0);
 
-                                let tolerance_factor = tolerance_report.overall_feasibility;
-                                let score = efficiency * cost_factor * tolerance_factor * 0.7
-                                    + efficiency * 0.3;
+                            let tolerance_factor = tolerance_report.overall_feasibility.max(0.3);
+                            let score = efficiency * cost_factor * tolerance_factor * 0.7
+                                + efficiency * 0.3;
 
-                                if score > best_score {
-                                    best_score = score;
-                                    best_params = (r, h, profile_type.to_string());
-                                    best_profile = profile.clone();
-                                    best_tolerance_report = tolerance_report.clone();
-                                }
+                            if score > best_score {
+                                best_score = score;
+                                best_params = (r, h, profile_type.to_string());
+                                best_profile = profile.clone();
+                                best_tolerance_report = tolerance_report.clone();
                             }
                         }
                     }
@@ -345,26 +361,28 @@ impl PoundingOptimizer {
 
         let avg_force = self.calculate_average_pounding_force(&best_profile, best_params.0, best_params.1);
         let impact_energy = self.calculate_impact_energy_per_cycle(best_params.1);
-        let husking_rate = calculate_husking_rate(impact_energy, &request.grain_type);
-        let breakage_rate = calculate_grain_breakage_rate(impact_energy, avg_force);
+        let husking_rate = calculate_husking_rate(impact_energy, &request.grain_type, &self.dynamics_config);
+        let breakage_rate = calculate_grain_breakage_rate(impact_energy, avg_force, &self.dynamics_config);
         let pressure_angle = self.calculate_pressure_angle(best_params.0, best_params.1)
             .unwrap_or(0.0);
 
         OptimizationResult {
-            id: Uuid::new_v4().to_string(),
+            optimization_id: Uuid::new_v4().to_string(),
             device_id: request.device_id.clone(),
             timestamp: Utc::now(),
-            cam_base_radius: best_params.0,
-            cam_lift: best_params.1,
-            cam_pressure_angle: pressure_angle,
+            grain_type: request.grain_type.clone(),
+            base_radius: best_params.0,
+            lift: best_params.1,
             cam_profile_type: best_params.2,
-            target_efficiency: request.target_efficiency,
-            actual_efficiency: best_score,
-            average_pounding_force: avg_force,
-            impact_energy_per_cycle: impact_energy,
+            overall_efficiency: best_score,
             husking_rate,
-            grain_breakage_rate: breakage_rate,
-            cam_profile_points: best_profile,
+            breakage_rate,
+            pounding_force: avg_force,
+            impact_energy,
+            manufacturing_cost: best_tolerance_report.manufacturing_cost,
+            cam_profile: best_profile,
+            tolerance_report: Some(best_tolerance_report),
+            optimization_score: best_score,
         }
     }
 
@@ -508,8 +526,8 @@ impl PoundingOptimizer {
         let impact_energy = self.calculate_impact_energy_per_cycle(lift);
         let avg_force = self.calculate_average_pounding_force(profile, base_radius, lift);
 
-        let husking_rate = calculate_husking_rate(impact_energy, grain_type);
-        let breakage_rate = calculate_grain_breakage_rate(impact_energy, avg_force);
+        let husking_rate = calculate_husking_rate(impact_energy, grain_type, &self.dynamics_config);
+        let breakage_rate = calculate_grain_breakage_rate(impact_energy, avg_force, &self.dynamics_config);
 
         let net_efficiency = husking_rate * (1.0 - breakage_rate);
 
@@ -589,7 +607,7 @@ mod tests {
         let profile = optimizer.generate_profile("cycloidal", 0.15, 0.12);
 
         let tolerance = ToleranceAnalysis::default();
-        let report = tolerance.analyze_profile(&profile);
+        let report = tolerance.analyze(&profile);
 
         assert!(report.min_curvature > 0.0);
         assert!(report.overall_feasibility >= 0.0);
@@ -626,9 +644,9 @@ mod tests {
         };
 
         let result = optimizer.optimize(&request);
-        assert!(result.actual_efficiency > 0.0);
-        assert!(result.actual_efficiency <= 1.0);
-        assert!(!result.cam_profile_points.is_empty());
+        assert!(result.overall_efficiency > 0.0);
+        assert!(result.overall_efficiency <= 1.0);
+        assert!(!result.cam_profile.is_empty());
     }
 
     #[test]
