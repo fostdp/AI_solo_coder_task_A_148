@@ -6,7 +6,7 @@ use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
 use serde_json;
 use std::sync::Arc;
 use std::collections::HashMap;
-use log::{info, warn, error};
+use tracing::{info, warn, error};
 use tokio::sync::oneshot;
 
 const BUFFER_FLUSH_SIZE: usize = 10;
@@ -98,14 +98,18 @@ impl MqttReceiver {
                                 let sensor_data: SensorData = msg.into();
 
                                 if let Err(e) = self.validate_sensor_data(&sensor_data) {
-                                    warn!("Invalid sensor data from {}: {}", sensor_data.device_id, e);
+                                    warn!(device_id = %sensor_data.device_id, error = %e, "Invalid sensor data");
+                                    crate::metrics::MQTT_MESSAGES_INVALID.inc();
                                     continue;
                                 }
 
                                 let device_id = sensor_data.device_id.clone();
+                                crate::metrics::MQTT_MESSAGES_RECEIVED.inc();
                                 info!(
-                                    "RX {}: cam={:.1}° wheel={:.2}rad/s",
-                                    device_id, sensor_data.cam_angle, sensor_data.water_wheel_speed
+                                    device_id = %device_id,
+                                    cam_angle = sensor_data.cam_angle,
+                                    wheel_speed = sensor_data.water_wheel_speed,
+                                    "MQTT message received"
                                 );
 
                                 let _ = self.sensor_tx.send(sensor_data.clone());

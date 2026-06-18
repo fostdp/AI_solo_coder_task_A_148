@@ -1,0 +1,82 @@
+﻿cargo :     Blocking waiting for file lock on build directory
+所在位置 行:1 字符: 1
++ cargo build 2>&1 | Out-File build_log.txt -Encoding utf8 ; Get-Conten ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling shuidui-backend v0.1.0 (D:\SOLO-2\AI_solo_coder_task_A_148\backend
+)
+error[E0255]: the name `metrics` is defined multiple times
+  --> src\main.rs:21:5
+   |
+13 | mod metrics;
+   | ------------ previous definition of the module `metrics` here
+...
+21 | use crate::metrics;
+   |     ^^^^^^^^^^^^^^ `metrics` reimported here
+   |
+   = note: `metrics` must be defined only once in the type namespace of this mo
+dule
+help: you can use `as` to change the binding name of the import
+   |
+21 | use crate::metrics as other_metrics;
+   |                    ++++++++++++++++
+
+error[E0433]: cannot find `compression` in `warp`
+   --> src\api.rs:164:25
+    |
+164 |             .with(warp::compression::gzip())
+    |                         ^^^^^^^^^^^ could not find `compression` in `warp
+`
+    |
+note: found an item that was configured out
+   --> C:\Users\y\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\warp-0.3
+.7\src\lib.rs:111:24
+    |
+109 | #[cfg(feature = "compression")]
+    |       ----------------------- the item is gated behind the `compression` 
+feature
+110 | #[doc(hidden)]
+111 | pub use self::filters::compression;
+    |                        ^^^^^^^^^^^
+
+warning: unused import: `crate::metrics`
+  --> src\main.rs:21:5
+   |
+21 | use crate::metrics;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `futures_util::TryFutureExt`
+ --> src\clickhouse_client.rs:5:5
+  |
+5 | use futures_util::TryFutureExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `pressure_angle`
+   --> src\optimization.rs:366:13
+    |
+366 |         let pressure_angle = self.calculate_pressure_angle(best_params.0,
+ best_params.1)
+    |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with a
+n underscore: `_pressure_angle`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by defau
+lt
+
+warning: unused variable: `key`
+  --> src\alarm_ws.rs:72:29
+   |
+72 |                         let key = format!("{}:{}", alert.alert_type, alert
+.alert_level);
+   |                             ^^^ help: if this is intentional, prefix it wi
+th an underscore: `_key`
+
+Some errors have detailed explanations: E0255, E0433.
+For more information about an error, try `rustc --explain E0255`.
+warning: `shuidui-backend` (bin "shuidui-backend") generated 4 warnings
+error: could not compile `shuidui-backend` (bin "shuidui-backend") due to 2 pre
+vious errors; 4 warnings emitted

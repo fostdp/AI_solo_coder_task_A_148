@@ -10,20 +10,31 @@ mod cam_simulator;
 mod force_optimizer;
 mod alarm_ws;
 mod api;
+mod metrics;
 
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
-use log::{info, error};
+use tracing::{info, error, warn};
+use tracing_subscriber::EnvFilter;
 use crate::config::{DynamicsConfig, OptimizationConfig};
 use crate::message_bus::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .json()
         .init();
 
     info!("Starting 水碓凸轮机构动力学仿真与舂捣力优化系统...");
+
+    metrics::init_metrics();
+    info!("Prometheus metrics initialized");
 
     let dynamics_config = DynamicsConfig::load_default();
     let optimization_config = OptimizationConfig::load_default();
@@ -44,9 +55,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "8080".to_string())
         .parse()?;
 
-    info!("ClickHouse: {}/{}", clickhouse_url, clickhouse_db);
-    info!("MQTT: {}:{} topic={}", mqtt_broker, mqtt_port, mqtt_topic);
-    info!("API Port: {}", api_port);
+    info!(
+        clickhouse_url = %clickhouse_url,
+        clickhouse_db = %clickhouse_db,
+        mqtt_broker = %mqtt_broker,
+        mqtt_port = mqtt_port,
+        mqtt_topic = %mqtt_topic,
+        api_port = api_port,
+        "Service configuration"
+    );
 
     let clickhouse = Arc::new(clickhouse_client::ClickHouseClient::new(
         &clickhouse_url,
@@ -55,10 +72,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("ClickHouse client initialized");
 
     let devices = clickhouse.get_all_devices().await.unwrap_or_else(|e| {
-        error!("Failed to load devices from ClickHouse: {}", e);
+        error!(error = %e, "Failed to load devices from ClickHouse");
         vec![]
     });
-    info!("Loaded {} devices from database", devices.len());
+    info!(device_count = devices.len(), "Loaded devices from database");
+    metrics::ACTIVE_DEVICES.set(devices.len() as i64);
 
     let (alert_tx, _alert_rx) = broadcast::channel::<models::Alert>(100);
 
@@ -115,28 +133,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mqtt_handle = tokio::spawn(async move {
         if let Err(e) = mqtt_receiver.run().await {
-            error!("MQTT subscriber error: {}", e);
+            error!(error = %e, "MQTT subscriber error");
         }
     });
 
     let ch_clone = clickhouse.clone();
     let persistence_handle = tokio::spawn(async move {
-        use log::warn;
         while let Some(dynamics) = dynamics_rx.recv().await {
             if let Err(e) = ch_clone.insert_dynamics_result(&[dynamics]).await {
-                warn!("ClickHouse persist dynamics failed: {}", e);
+                warn!(error = %e, "ClickHouse persist dynamics failed");
             }
         }
     });
 
     let api_handle = tokio::spawn(async move {
-        info!("API server starting on port {}", api_port);
+        info!(port = api_port, "API server starting");
         warp::serve(routes).run(([0, 0, 0, 0], api_port)).await;
     });
 
     info!("System started successfully!");
-    info!("HTTP API: http://localhost:{}", api_port);
-    info!("WebSocket: ws://localhost:{}/ws/alerts", api_port);
+    info!(port = api_port, "HTTP API available");
+    info!(port = api_port, "WebSocket available at /ws/alerts");
 
     tokio::select! {
         _ = mqtt_handle => {

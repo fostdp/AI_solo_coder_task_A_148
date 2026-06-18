@@ -4,13 +4,14 @@ use crate::models::{
 };
 use crate::clickhouse_client::ClickHouseClient;
 use crate::message_bus::{SimulatorCmdTx, OptimizerCmdTx, AlarmCmdTx, SimulatorCommand, OptimizerCommand};
+use crate::metrics;
 
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot};
 use warp::Filter;
 use serde::{Deserialize, Serialize};
-use log::{error, warn};
+use tracing::{error, warn};
 use futures_util::StreamExt;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -137,6 +138,16 @@ impl ApiServer {
             .and(with_sim_tx(sim_cmd_tx.clone()))
             .and_then(handle_simulate);
 
+        let metrics_route = warp::path!("metrics")
+            .and(warp::get())
+            .map(|| {
+                warp::reply::with_header(
+                    metrics::gather_metrics(),
+                    "content-type",
+                    "text/plain; version=0.0.4; charset=utf-8",
+                )
+            });
+
         health
             .or(devices_route)
             .or(device_by_id_route)
@@ -148,7 +159,9 @@ impl ApiServer {
             .or(cam_profile_route)
             .or(simulate_route)
             .or(ws_route)
+            .or(metrics_route)
             .with(cors)
+            .with(warp::filters::compression::gzip())
     }
 }
 

@@ -4,7 +4,7 @@ use crate::models::{DeviceInfo, OptimizationResult, OptimizationRequest};
 use crate::optimization::{PoundingOptimizer, ToleranceAnalysis};
 use crate::config::DynamicsConfig;
 
-use log::{info, error};
+use tracing::{info, error};
 
 pub struct ForceOptimizerService {
     config: OptimizationConfig,
@@ -30,7 +30,10 @@ impl ForceOptimizerService {
         while let Some(cmd) = self.cmd_rx.recv().await {
             match cmd {
                 OptimizerCommand::Optimize { request, device, reply } => {
+                    let start = std::time::Instant::now();
                     let result = self.handle_optimize(request, device);
+                    crate::metrics::OPTIMIZATION_DURATION.observe(start.elapsed().as_secs_f64());
+                    crate::metrics::OPTIMIZATIONS_RUN.inc();
                     let _ = reply.send(result);
                 }
             }

@@ -4,7 +4,7 @@ use crate::models::{DeviceInfo, DynamicsResult, SensorData, CamPoint};
 use crate::config::DynamicsConfig;
 
 use std::collections::HashMap;
-use log::{info, error};
+use tracing::{info, error};
 
 pub struct CamSimulatorService {
     simulators: HashMap<String, CamDynamicsSimulator>,
@@ -34,7 +34,11 @@ impl CamSimulatorService {
         while let Some(cmd) = self.cmd_rx.recv().await {
             match cmd {
                 SimulatorCommand::Simulate { sensor, device, reply } => {
+                    let start = std::time::Instant::now();
                     let result = self.handle_simulate(sensor, device);
+                    crate::metrics::SIMULATION_DURATION.observe(start.elapsed().as_secs_f64());
+                    crate::metrics::SIMULATIONS_RUN.inc();
+                    crate::metrics::POUNDING_FORCE.observe(result.pounding_force);
                     let _ = reply.send(result);
                 }
                 SimulatorCommand::GenerateProfile { device, base_radius, lift, num_points, reply } => {

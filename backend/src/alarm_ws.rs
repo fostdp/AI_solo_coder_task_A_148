@@ -3,7 +3,7 @@ use crate::alerts::AlertDetector;
 use crate::models::{Alert, DeviceInfo, SensorData};
 
 use tokio::sync::broadcast;
-use log::{info, error, warn};
+use tracing::{info, error, warn};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Instant, Duration};
 
@@ -75,9 +75,12 @@ impl AlarmWsService {
                             .or_insert_with(|| (AlertDetector::new(&device_clone), RateLimiter::new()))
                             .1;
                         if rate_limiter.should_send(&alert.alert_type, &alert.alert_level) {
+                            crate::metrics::ALERTS_GENERATED.inc();
                             if self.alert_tx.send(alert.clone()).is_err() {
                                 warn!("Alert broadcast channel has no subscribers");
                             }
+                        } else {
+                            crate::metrics::ALERTS_SUPPRESSED.inc();
                         }
                     }
                     let _ = reply.send(alerts);
