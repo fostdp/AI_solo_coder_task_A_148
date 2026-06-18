@@ -1,0 +1,20 @@
+[package]
+name = "shuidui-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+rumqttc = { version = "0.24", features = ["async"] }
+clickhouse = { version = "0.12", features = ["tokio"] }
+warp = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+log = "0.4"
+env_logger = "0.10"
+thiserror = "1.0"
+parking_lot = "0.12"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+futures-util = "0.3"
