@@ -1,0 +1,15 @@
+{
+  "name": "shuidui-frontend",
+  "version": "1.0.0",
+  "description": "古代水碓凸轮机构动力学仿真与舂捣力优化系统 - 前端",
+  "scripts": {
+    "dev": "npx http-server . -p 3000 -c-1",
+    "serve": "python -m http.server 3000"
+  },
+  "keywords": ["水碓", "凸轮", "动力学仿真", "three.js"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
