@@ -365,7 +365,7 @@ async fn handle_simulate(
         }
     };
 
-    let simulator = CamDynamicsSimulator::new(device);
+    let mut simulator = CamDynamicsSimulator::new(device);
 
     let sensor = SensorData {
         device_id: request.device_id,

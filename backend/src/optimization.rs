@@ -7,21 +7,294 @@ use uuid::Uuid;
 
 const GRAVITY: f64 = 9.81;
 
+const DIMENSIONAL_TOLERANCE: f64 = 0.00005;
+const SURFACE_ROUGHNESS_RA: f64 = 1.6e-6;
+const ANGULAR_TOLERANCE: f64 = 0.05_f64.to_radians();
+const MIN_CURVATURE_RADIUS: f64 = 0.003;
+const MANUFACTURING_COST_BASE: f64 = 1000.0;
+
+pub struct ToleranceAnalysis {
+    dimensional_tolerance: f64,
+    surface_roughness: f64,
+    angular_tolerance: f64,
+    min_curvature_radius: f64,
+}
+
+impl Default for ToleranceAnalysis {
+    fn default() -> Self {
+        ToleranceAnalysis {
+            dimensional_tolerance: DIMENSIONAL_TOLERANCE,
+            surface_roughness: SURFACE_ROUGHNESS_RA,
+            angular_tolerance: ANGULAR_TOLERANCE,
+            min_curvature_radius: MIN_CURVATURE_RADIUS,
+        }
+    }
+}
+
+impl ToleranceAnalysis {
+    pub fn new(
+        dimensional_tolerance: f64,
+        surface_roughness: f64,
+        angular_tolerance: f64,
+        min_curvature_radius: f64,
+    ) -> Self {
+        ToleranceAnalysis {
+            dimensional_tolerance,
+            surface_roughness,
+            angular_tolerance,
+            min_curvature_radius,
+        }
+    }
+
+    pub fn analyze_profile(&self, profile: &[CamPoint]) -> ToleranceReport {
+        let mut report = ToleranceReport::default();
+
+        report.min_curvature = self.calculate_min_curvature(profile);
+        report.curvature_ok = report.min_curvature >= self.min_curvature_radius;
+
+        report.lift_deviation = self.calculate_lift_tolerance_sensitivity(profile);
+        report.lift_ok = report.lift_deviation <= self.dimensional_tolerance * 5.0;
+
+        report.pressure_angle_variation = self.calculate_pressure_angle_variation(profile);
+        report.pressure_angle_ok = report.pressure_angle_variation <= self.angular_tolerance;
+
+        report.surface_sensitivity = self.calculate_surface_sensitivity(profile);
+        report.surface_ok = report.surface_sensitivity <= self.surface_roughness * 100.0;
+
+        report.jerk = self.calculate_max_jerk(profile);
+        report.jerk_ok = report.jerk < 1000.0;
+
+        report.overall_feasibility =
+            report.curvature_ok as u8 as f64 * 0.35 +
+            report.lift_ok as u8 as f64 * 0.25 +
+            report.pressure_angle_ok as u8 as f64 * 0.2 +
+            report.jerk_ok as u8 as f64 * 0.1 +
+            report.surface_ok as u8 as f64 * 0.1;
+
+        report.manufacturing_cost = self.estimate_manufacturing_cost(&report, profile);
+
+        report
+    }
+
+    fn calculate_min_curvature(&self, profile: &[CamPoint]) -> f64 {
+        let n = profile.len();
+        let mut min_r = f64::INFINITY;
+
+        for i in 0..n {
+            let i0 = (i + n - 1) % n;
+            let i1 = i;
+            let i2 = (i + 1) % n;
+
+            let p0 = &profile[i0];
+            let p1 = &profile[i1];
+            let p2 = &profile[i2];
+
+            let a0 = p0.angle.to_radians();
+            let a1 = p1.angle.to_radians();
+            let a2 = p2.angle.to_radians();
+
+            let x0 = p0.radius * a0.cos();
+            let y0 = p0.radius * a0.sin();
+            let x1 = p1.radius * a1.cos();
+            let y1 = p1.radius * a1.sin();
+            let x2 = p2.radius * a2.cos();
+            let y2 = p2.radius * a2.sin();
+
+            let curvature = Self::curvature_from_points(x0, y0, x1, y1, x2, y2);
+            if curvature > 0.0 {
+                let r = 1.0 / curvature;
+                if r < min_r {
+                    min_r = r;
+                }
+            }
+        }
+
+        min_r
+    }
+
+    fn curvature_from_points(
+        x0: f64, y0: f64,
+        x1: f64, y1: f64,
+        x2: f64, y2: f64,
+    ) -> f64 {
+        let dx1 = x1 - x0;
+        let dy1 = y1 - y0;
+        let dx2 = x2 - x1;
+        let dy2 = y2 - y1;
+
+        let cross = dx1 * dy2 - dy1 * dx2;
+        let d1 = (dx1 * dx1 + dy1 * dy1).sqrt();
+        let d2 = (dx2 * dx2 + dy2 * dy2).sqrt();
+        let d12 = ((x2 - x0) * (x2 - x0) + (y2 - y0) * (y2 - y0)).sqrt();
+
+        if d1 < 1e-10 || d2 < 1e-10 || d12 < 1e-10 {
+            return 0.0;
+        }
+
+        2.0 * cross.abs() / (d1 * d2 * d12)
+    }
+
+    fn calculate_lift_tolerance_sensitivity(&self, profile: &[CamPoint]) -> f64 {
+        if profile.len() < 3 {
+            return 0.0;
+        }
+
+        let lifts: Vec<f64> = profile.iter().map(|p| p.lift).collect();
+        let mean_lift: f64 = lifts.iter().sum::<f64>() / lifts.len() as f64;
+
+        let variance: f64 = lifts
+            .iter()
+            .map(|l| (l - mean_lift).powi(2))
+            .sum::<f64>() / lifts.len() as f64;
+
+        variance.sqrt()
+    }
+
+    fn calculate_pressure_angle_variation(&self, profile: &[CamPoint]) -> f64 {
+        if profile.len() < 2 {
+            return 0.0;
+        }
+
+        let mut max_variation = 0.0;
+
+        for i in 1..profile.len() {
+            let prev = &profile[i - 1];
+            let curr = &profile[i];
+
+            if curr.radius > 0.0 {
+                let variation = (curr.velocity / curr.radius).abs();
+                if variation > max_variation {
+                    max_variation = variation;
+                }
+            }
+        }
+
+        max_variation
+    }
+
+    fn calculate_surface_sensitivity(&self, profile: &[CamPoint]) -> f64 {
+        if profile.len() < 2 {
+            return 0.0;
+        }
+
+        let mut total_variation = 0.0;
+
+        for i in 1..profile.len() {
+            let prev = &profile[i - 1];
+            let curr = &profile[i];
+            let d_angle = (curr.angle - prev.angle).to_radians();
+
+            let dr = (curr.radius - prev.radius).abs();
+            let arc_length = ((curr.radius + prev.radius) / 2.0) * d_angle.abs();
+
+            if arc_length > 0.0 {
+                total_variation += dr / arc_length;
+            }
+        }
+
+        total_variation / profile.len() as f64
+    }
+
+    fn calculate_max_jerk(&self, profile: &[CamPoint]) -> f64 {
+        if profile.len() < 3 {
+            return 0.0;
+        }
+
+        let mut max_jerk = 0.0;
+
+        for i in 2..profile.len() {
+            let a0 = profile[i - 2].acceleration;
+            let a1 = profile[i - 1].acceleration;
+            let a2 = profile[i].acceleration;
+
+            let t0 = profile[i - 2].angle.to_radians();
+            let t1 = profile[i - 1].angle.to_radians();
+            let t2 = profile[i].angle.to_radians();
+
+            let dt1 = t1 - t0;
+            let dt2 = t2 - t1;
+
+            if dt1 > 0.0 && dt2 > 0.0 {
+                let da1 = (a1 - a0) / dt1;
+                let da2 = (a2 - a1) / dt2;
+                let jerk = ((da2 - da1) / ((dt1 + dt2) / 2.0)).abs();
+                if jerk > max_jerk {
+                    max_jerk = jerk;
+                }
+            }
+        }
+
+        max_jerk
+    }
+
+    fn estimate_manufacturing_cost(
+        &self,
+        report: &ToleranceReport,
+        profile: &[CamPoint],
+    ) -> f64 {
+        let mut cost = MANUFACTURING_COST_BASE;
+
+        if !report.curvature_ok {
+            cost *= 1.5;
+        }
+
+        let tightness = (DIMENSIONAL_TOLERANCE / self.dimensional_tolerance).max(1.0);
+        cost *= tightness;
+
+        let roughness_factor = (SURFACE_ROUGHNESS_RA / self.surface_roughness.max(0.1e-6)).max(1.0);
+        cost *= roughness_factor.sqrt();
+
+        if !report.jerk_ok {
+            cost *= 1.3;
+        }
+
+        let complexity = profile.len() as f64 / 360.0;
+        cost *= 1.0 + complexity * 0.2;
+
+        cost
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ToleranceReport {
+    pub min_curvature: f64,
+    pub curvature_ok: bool,
+    pub lift_deviation: f64,
+    pub lift_ok: bool,
+    pub pressure_angle_variation: f64,
+    pub pressure_angle_ok: bool,
+    pub surface_sensitivity: f64,
+    pub surface_ok: bool,
+    pub jerk: f64,
+    pub jerk_ok: bool,
+    pub overall_feasibility: f64,
+    pub manufacturing_cost: f64,
+}
+
 pub struct PoundingOptimizer {
     device: DeviceInfo,
+    tolerance: ToleranceAnalysis,
 }
 
 impl PoundingOptimizer {
     pub fn new(device: DeviceInfo) -> Self {
-        PoundingOptimizer { device }
+        PoundingOptimizer {
+            device,
+            tolerance: ToleranceAnalysis::default(),
+        }
+    }
+
+    pub fn with_tolerance(device: DeviceInfo, tolerance: ToleranceAnalysis) -> Self {
+        PoundingOptimizer { device, tolerance }
     }
 
     pub fn optimize(&self, request: &OptimizationRequest) -> OptimizationResult {
         let constraints = &request.constraints;
 
-        let mut best_efficiency = 0.0;
+        let mut best_score = 0.0;
         let mut best_params = (self.device.cam_base_radius, self.device.cam_lift, "cycloidal".to_string());
         let mut best_profile: Vec<CamPoint> = Vec::new();
+        let mut best_tolerance_report = ToleranceReport::default();
 
         let profile_types = vec!["cycloidal", "harmonic", "trapezoidal", "polynomial"];
 
@@ -36,17 +309,31 @@ impl PoundingOptimizer {
                     if let Some(pressure_angle) = self.calculate_pressure_angle(r, h) {
                         if pressure_angle <= constraints.max_pressure_angle {
                             let profile = self.generate_profile(profile_type, r, h);
-                            let efficiency = self.evaluate_efficiency(
-                                &profile,
-                                &request.grain_type,
-                                r,
-                                h,
-                            );
+                            let tolerance_report = self.tolerance.analyze_profile(&profile);
 
-                            if efficiency > best_efficiency {
-                                best_efficiency = efficiency;
-                                best_params = (r, h, profile_type.to_string());
-                                best_profile = profile;
+                            if tolerance_report.overall_feasibility >= 0.5 {
+                                let efficiency = self.evaluate_efficiency(
+                                    &profile,
+                                    &request.grain_type,
+                                    r,
+                                    h,
+                                );
+
+                                let cost_factor =
+                                    (MANUFACTURING_COST_BASE / tolerance_report.manufacturing_cost)
+                                        .max(0.3)
+                                        .min(1.0);
+
+                                let tolerance_factor = tolerance_report.overall_feasibility;
+                                let score = efficiency * cost_factor * tolerance_factor * 0.7
+                                    + efficiency * 0.3;
+
+                                if score > best_score {
+                                    best_score = score;
+                                    best_params = (r, h, profile_type.to_string());
+                                    best_profile = profile.clone();
+                                    best_tolerance_report = tolerance_report.clone();
+                                }
                             }
                         }
                     }
@@ -72,7 +359,7 @@ impl PoundingOptimizer {
             cam_pressure_angle: pressure_angle,
             cam_profile_type: best_params.2,
             target_efficiency: request.target_efficiency,
-            actual_efficiency: best_efficiency,
+            actual_efficiency: best_score,
             average_pounding_force: avg_force,
             impact_energy_per_cycle: impact_energy,
             husking_rate,
@@ -154,7 +441,7 @@ impl PoundingOptimizer {
             let t2 = 0.8;
             let v_max = total_lift / (pi * (t2 - t1 + t1));
 
-            let (s, v, a) = if t < t1 {
+            if t < t1 {
                 let a_val = v_max / (t1 * pi);
                 let s_val = 0.5 * a_val * (t * pi).powi(2);
                 let v_val = a_val * t * pi;
@@ -168,15 +455,14 @@ impl PoundingOptimizer {
                 let s_val = total_lift - 0.5 * (-a_val) * dt.powi(2);
                 let v_val = v_max + a_val * dt;
                 (s_val, v_val, a_val)
-            };
-            (s, v, a)
+            }
         } else {
             let t = (angle - pi) / pi;
             let t1 = 0.2;
             let t2 = 0.8;
             let v_max = -total_lift / (pi * (t2 - t1 + t1));
 
-            let (s, v, a) = if t < t1 {
+            if t < t1 {
                 let a_val = v_max / (t1 * pi);
                 let s_val = total_lift + 0.5 * a_val * (t * pi).powi(2);
                 let v_val = a_val * t * pi;
@@ -190,8 +476,7 @@ impl PoundingOptimizer {
                 let s_val = 0.0 - 0.5 * (-a_val) * dt.powi(2);
                 let v_val = v_max + a_val * dt;
                 (s_val, v_val, a_val)
-            };
-            (s, v, a)
+            }
         }
     }
 
@@ -295,6 +580,32 @@ mod tests {
             water_flow_rate: 0.05,
             frame_vibration_threshold: 5.0,
         }
+    }
+
+    #[test]
+    fn test_tolerance_analysis() {
+        let device = create_test_device();
+        let optimizer = PoundingOptimizer::new(device);
+        let profile = optimizer.generate_profile("cycloidal", 0.15, 0.12);
+
+        let tolerance = ToleranceAnalysis::default();
+        let report = tolerance.analyze_profile(&profile);
+
+        assert!(report.min_curvature > 0.0);
+        assert!(report.overall_feasibility >= 0.0);
+        assert!(report.overall_feasibility <= 1.0);
+        assert!(report.manufacturing_cost > 0.0);
+    }
+
+    #[test]
+    fn test_curvature_calculation() {
+        let tolerance = ToleranceAnalysis::default();
+        let c = ToleranceAnalysis::curvature_from_points(
+            -1.0, 0.0,
+            0.0, 1.0,
+            1.0, 0.0,
+        );
+        assert!(c > 0.0);
     }
 
     #[test]

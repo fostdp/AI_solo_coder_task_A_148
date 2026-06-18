@@ -1,4 +1,4 @@
-use crate::models::{MqttSensorMessage, SensorData};
+use crate::models::{MqttSensorMessage, SensorData, DeviceInfo};
 use crate::dynamics::CamDynamicsSimulator;
 use crate::alerts::AlertDetector;
 use crate::clickhouse_client::ClickHouseClient;
@@ -7,7 +7,9 @@ use crate::models::Alert;
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
 use serde_json;
 use std::sync::Arc;
+use std::collections::HashMap;
 use tokio::sync::broadcast;
+use parking_lot::Mutex;
 use log::{info, warn, error};
 
 pub struct MqttSubscriber {
@@ -15,7 +17,8 @@ pub struct MqttSubscriber {
     event_loop: EventLoop,
     clickhouse: Arc<ClickHouseClient>,
     alert_tx: broadcast::Sender<Alert>,
-    device_info: std::collections::HashMap<String, crate::models::DeviceInfo>,
+    device_info: HashMap<String, DeviceInfo>,
+    simulators: Arc<Mutex<HashMap<String, CamDynamicsSimulator>>>,
     topic: String,
 }
 
@@ -38,13 +41,17 @@ impl MqttSubscriber {
             event_loop,
             clickhouse,
             alert_tx,
-            device_info: std::collections::HashMap::new(),
+            device_info: HashMap::new(),
+            simulators: Arc::new(Mutex::new(HashMap::new())),
             topic: topic.to_string(),
         })
     }
 
-    pub fn set_devices(&mut self, devices: Vec<crate::models::DeviceInfo>) {
+    pub fn set_devices(&mut self, devices: Vec<DeviceInfo>) {
+        let mut sims = self.simulators.lock();
         for device in devices {
+            let simulator = CamDynamicsSimulator::new(device.clone());
+            sims.insert(device.device_id.clone(), simulator);
             self.device_info.insert(device.device_id.clone(), device);
         }
     }
@@ -76,9 +83,20 @@ impl MqttSubscriber {
                                     sensor_data.device_id, sensor_data.cam_angle
                                 );
 
-                                if let Some(device) = self.device_info.get(&sensor_data.device_id) {
-                                    let simulator = CamDynamicsSimulator::new(device.clone());
-                                    let dynamics = simulator.simulate(&sensor_data);
+                                let device_id = sensor_data.device_id.clone();
+
+                                if let Some(device) = self.device_info.get(&device_id) {
+                                    let dynamics = {
+                                        let mut sims = self.simulators.lock();
+                                        if !sims.contains_key(&device_id) {
+                                            sims.insert(
+                                                device_id.clone(),
+                                                CamDynamicsSimulator::new(device.clone()),
+                                            );
+                                        }
+                                        let sim = sims.get_mut(&device_id).unwrap();
+                                        sim.simulate(&sensor_data)
+                                    };
 
                                     let detector = AlertDetector::new(device);
                                     let alerts = detector.detect(&sensor_data);

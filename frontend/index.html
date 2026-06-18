@@ -529,6 +529,87 @@
 
         let scene, camera, renderer;
         let waterWheel, cam, duitou, frame;
+        let camUniforms;
+
+        const camVertexShader = `
+            uniform float uBaseRadius;
+            uniform float uLift;
+            uniform float uRotation;
+            uniform float uThickness;
+            uniform float uTime;
+
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying float vCamAngle;
+            varying float vRadius;
+
+            float harmonicLift(float angle, float totalLift) {
+                float pi = 3.14159265359;
+                float a = mod(angle, pi * 2.0);
+                float t;
+                if (a < pi) {
+                    t = a / pi;
+                    return totalLift * (1.0 - cos(pi * t)) / 2.0;
+                } else {
+                    t = (a - pi) / pi;
+                    return totalLift * (1.0 + cos(pi * t)) / 2.0;
+                }
+            }
+
+            void main() {
+                float theta = atan(position.z, position.x);
+                float baseR = length(vec2(position.x, position.z));
+
+                float adjustedTheta = theta + uRotation;
+                float dynamicLift = harmonicLift(adjustedTheta, uLift);
+                float r = uBaseRadius + dynamicLift;
+
+                float scale = r / baseR;
+                vec3 newPos = position;
+                newPos.x *= scale;
+                newPos.z *= scale;
+
+                vCamAngle = adjustedTheta;
+                vRadius = r;
+                vNormal = normalize(normalMatrix * normal);
+                vPosition = newPos;
+
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(newPos, 1.0);
+            }
+        `;
+
+        const camFragmentShader = `
+            uniform vec3 uColor;
+            uniform float uMetalness;
+            uniform float uRoughness;
+            uniform float uLift;
+
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            varying float vCamAngle;
+            varying float vRadius;
+
+            void main() {
+                vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+                float diff = max(dot(normalize(vNormal), lightDir), 0.0);
+
+                vec3 viewDir = normalize(cameraPosition - vPosition);
+                vec3 halfDir = normalize(lightDir + viewDir);
+                float spec = pow(max(dot(normalize(vNormal), halfDir), 0.0), 32.0) * uMetalness;
+
+                float rim = 1.0 - max(dot(viewDir, normalize(vNormal)), 0.0);
+                rim = pow(rim, 3.0) * 0.3;
+
+                vec3 ambient = uColor * 0.3;
+                vec3 diffuse = uColor * diff * (1.0 - uRoughness * 0.5);
+                vec3 specular = vec3(1.0, 0.95, 0.85) * spec;
+                vec3 rimLight = vec3(1.0, 0.7, 0.4) * rim;
+
+                vec3 finalColor = ambient + diffuse + specular + rimLight;
+
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
 
         function initThreeJS() {
             const canvas = document.getElementById('canvas-3d');
@@ -693,46 +774,38 @@
             const lift = 0.3;
             const thickness = 0.2;
 
-            const camShape = new THREE.Shape();
-            const segments = 64;
-
-            for (let i = 0; i <= segments; i++) {
-                const angle = (i / segments) * Math.PI * 2;
-                let r;
-                if (angle < Math.PI) {
-                    const t = angle / Math.PI;
-                    r = baseRadius + lift * (1 - Math.cos(Math.PI * t)) / 2;
-                } else {
-                    const t = (angle - Math.PI) / Math.PI;
-                    r = baseRadius + lift * (1 + Math.cos(Math.PI * t)) / 2;
-                }
-                const x = Math.cos(angle) * r;
-                const y = Math.sin(angle) * r;
-                if (i === 0) {
-                    camShape.moveTo(x, y);
-                } else {
-                    camShape.lineTo(x, y);
-                }
-            }
-
-            const extrudeSettings = {
-                depth: thickness,
-                bevelEnabled: false
+            camUniforms = {
+                uBaseRadius: { value: baseRadius },
+                uLift: { value: lift },
+                uRotation: { value: 0.0 },
+                uThickness: { value: thickness },
+                uTime: { value: 0.0 },
+                uColor: { value: new THREE.Color(0xcd853f) },
+                uMetalness: { value: 0.6 },
+                uRoughness: { value: 0.4 }
             };
 
-            const camGeometry = new THREE.ExtrudeGeometry(camShape, extrudeSettings);
-            const camMaterial = new THREE.MeshStandardMaterial({
-                color: 0xcd853f,
-                metalness: 0.6,
-                roughness: 0.4
+            const camGeometry = new THREE.CylinderGeometry(
+                baseRadius + lift * 0.5,
+                baseRadius + lift * 0.5,
+                thickness,
+                128,
+                1,
+                false
+            );
+
+            const camMaterial = new THREE.ShaderMaterial({
+                uniforms: camUniforms,
+                vertexShader: camVertexShader,
+                fragmentShader: camFragmentShader
             });
+
             const camMesh = new THREE.Mesh(camGeometry, camMaterial);
-            camMesh.rotation.y = -Math.PI / 2;
-            camMesh.position.z = -thickness / 2;
             camMesh.castShadow = true;
+            camMesh.receiveShadow = true;
             group.add(camMesh);
 
-            const hubGeometry = new THREE.CylinderGeometry(0.12, 0.12, thickness + 0.1, 16);
+            const hubGeometry = new THREE.CylinderGeometry(0.12, 0.12, thickness + 0.1, 24);
             const hubMaterial = new THREE.MeshStandardMaterial({
                 color: 0x8B7355,
                 metalness: 0.5,
@@ -1263,8 +1336,9 @@
             if (waterWheel) {
                 waterWheel.rotation.z -= 0.03 * animationSpeed;
             }
-            if (cam) {
-                cam.rotation.z = -angleRad;
+            if (cam && camUniforms) {
+                camUniforms.uRotation.value = -angleRad;
+                camUniforms.uTime.value = performance.now() * 0.001;
             }
             if (duitou) {
                 duitou.position.y = 1.8 + duitouLift;
@@ -1291,8 +1365,11 @@
             document.getElementById('husking-rate').textContent = huskingRate.toFixed(1);
             document.getElementById('breakage-rate').textContent = breakageRate.toFixed(1);
 
-            drawCamProfile();
-            drawForceChart();
+            if (!window._lastChartUpdate || Date.now() - window._lastChartUpdate > 33) {
+                drawCamProfile();
+                drawForceChart();
+                window._lastChartUpdate = Date.now();
+            }
 
             if (renderer) {
                 renderer.render(scene, camera);
